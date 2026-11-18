@@ -31,8 +31,10 @@ using Test
             @test result.input === ℓ
             @test result.optim_fun isa SciMLBase.OptimizationFunction
             @test result.rng === rng
-            @test result.optimizer ===
-                Pathfinder.default_optimizer(Pathfinder.DEFAULT_HISTORY_LENGTH)
+            default = Pathfinder.default_optimizer(Pathfinder.DEFAULT_HISTORY_LENGTH)
+            @test typeof(result.optimizer) === typeof(default)
+            @test result.optimizer.m == Pathfinder.DEFAULT_HISTORY_LENGTH
+            @test result.optimizer.linesearch!.mayterminate !== default.linesearch!.mayterminate
             @test result.fit_distribution isa MixtureModel
             @test ncomponents(result.fit_distribution) == nruns
             @test Distributions.component_type(result.fit_distribution) <: MvNormal

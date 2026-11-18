@@ -31,8 +31,10 @@ using Test
             @test result.optim_prob isa SciMLBase.OptimizationProblem
             @test result.logp(init) ≈ logp(init)
             @test result.rng === rng
-            @test result.optimizer ===
-                Pathfinder.default_optimizer(Pathfinder.DEFAULT_HISTORY_LENGTH)
+            default = Pathfinder.default_optimizer(Pathfinder.DEFAULT_HISTORY_LENGTH)
+            @test typeof(result.optimizer) === typeof(default)
+            @test result.optimizer.m == Pathfinder.DEFAULT_HISTORY_LENGTH
+            @test result.optimizer.linesearch!.mayterminate !== default.linesearch!.mayterminate
             (; fit_distribution) = result
             @test fit_distribution isa MvNormal
             @test fit_distribution.μ ≈ zeros(dim) atol = 1e-6
