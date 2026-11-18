@@ -1,0 +1,145 @@
+{
+  "schema": 1,
+  "line": {
+    "repo": "nsiccha/Pathfinder.jl",
+    "ref": "dogfood",
+    "sha": "72b58cef402f10c6afba4f57bf38c3a5f0105786"
+  },
+  "upstream": {
+    "repo": "mlcolab/Pathfinder.jl",
+    "ref": "main",
+    "sha": "7a449c9f4ae01b49de3e6baf681496ef2e96c2b3"
+  },
+  "prepared_at": "2026-11-18T12:28:07Z",
+  "problems": [
+    {
+      "id": "shared-default-linesearch",
+      "role": "fix",
+      "title": "Independently constructed default optimizers share mutable line-search state",
+      "summary": "Two optimizers created for separate Pathfinder calls share the Hager–Zhang termination flag. Parallel fits can therefore interfere even with separate RNGs.",
+      "repairs": [],
+      "upstream_refs": [
+        {
+          "url": "https://github.com/mlcolab/Pathfinder.jl/issues/248",
+          "relation": "reports"
+        },
+        {
+          "url": "https://github.com/mlcolab/Pathfinder.jl/pull/249",
+          "relation": "fixes"
+        }
+      ],
+      "draft": {
+        "title": "Independently constructed default optimizers share mutable line-search state",
+        "body": "Two optimizers created for separate Pathfinder calls share the Hager–Zhang termination flag. Parallel fits can therefore interfere even with separate RNGs.\n\n```julia\nusing Pathfinder\na = Pathfinder.default_optimizer(6)\nb = Pathfinder.default_optimizer(6)\na.linesearch!.mayterminate[] = true\n@show b.linesearch!.mayterminate[]    # expected false for a fresh optimizer\n```\n\nUpstream constructs the default line search once at module load. Constructing it inside the optimizer factory gives each fit a separate mutable flag. This can be tested deterministically without relying on a race between threads.",
+        "prepared_at": "2026-11-18T12:28:07Z"
+      },
+      "fix": {
+        "branch": "dogfood",
+        "commits": [
+          {
+            "sha": "6971c216e5c4cf7fcd0d19e45314d697c130f99e",
+            "title": "make default_optimizer thread safe",
+            "original": [
+              "6971c216e5c4cf7fcd0d19e45314d697c130f99e"
+            ]
+          },
+          {
+            "sha": "72b58cef402f10c6afba4f57bf38c3a5f0105786",
+            "title": "Test that each default optimizer owns its line-search state",
+            "original": [
+              "72b58cef402f10c6afba4f57bf38c3a5f0105786"
+            ]
+          }
+        ],
+        "why_together": "Apply the factory change first, then the test update. The original change isolates line-search state. The test commit replaces two identity assertions that required shared state and checks that both entry points keep the configured optimizer with an independent termination flag. This pair applies independently of the trace-storage feature."
+      },
+      "depends_on": [],
+      "requires": [],
+      "validation": [
+        {
+          "base": "7a449c9f4ae01b49de3e6baf681496ef2e96c2b3",
+          "julia": "1.10.12",
+          "bounds": "forced",
+          "tests": [
+            "test/utils.jl",
+            "test/optimize.jl",
+            "test/inverse_hessian.jl",
+            "test/mvnormal.jl",
+            "test/elbo.jl",
+            "test/singlepath.jl",
+            "test/multipath.jl",
+            "Separate default optimizers own distinct mutable termination flags"
+          ],
+          "result": "passed",
+          "detail": "2,291 of 2,291 checks passed on the merged line with Optim 2.3.2 and LineSearches 7.8.2. Julia used one thread."
+        },
+        {
+          "base": "7a449c9f4ae01b49de3e6baf681496ef2e96c2b3",
+          "julia": "1.10.12",
+          "bounds": "forced",
+          "tests": [
+            "Flag identity and a write through one of two default optimizers on upstream and dogfood"
+          ],
+          "result": "passed",
+          "detail": "Two checks reproduced shared mutable state on upstream. On dogfood the two flags were distinct and a write through one optimizer left the other unchanged."
+        }
+      ]
+    },
+    {
+      "id": "retain-only-best-fit",
+      "role": "fix",
+      "title": "High-dimensional fits retain every intermediate distribution and its draws",
+      "summary": "Pathfinder retains a position, gradient and fitted distribution for each optimization step, along with intermediate ELBO draws. A caller who needs only the selected fit pays a storage cost that grows with both dimension and iteration count.",
+      "repairs": [],
+      "upstream_refs": [
+        {
+          "url": "https://github.com/mlcolab/Pathfinder.jl/issues/213",
+          "relation": "reports"
+        },
+        {
+          "url": "https://github.com/mlcolab/Pathfinder.jl/pull/437",
+          "relation": "fixes"
+        }
+      ],
+      "draft": {
+        "title": "High-dimensional fits retain every intermediate distribution and its draws",
+        "body": "Pathfinder retains a position, gradient and fitted distribution for each optimization step, along with intermediate ELBO draws. A caller who needs only the selected fit pays a storage cost that grows with both dimension and iteration count.\n\n```julia\nusing Pathfinder, Random\nweights = exp10.(range(-2, 2; length=2000))\nlogp(x) = -sum(weights .* abs2.(x)) / 2\nfor k in (20, 80)\n    r = pathfinder(logp; init=ones(length(weights)), maxiters=k,\n                   ndraws=4, ndraws_elbo=4, rng=MersenneTwister(3))\n    @show k length(r.optim_trace.points) length(r.fit_distributions)\nend\n```\n\nThe fork adds `save_trace=false`. It updates the inverse-Hessian approximation and scores each candidate as the optimizer runs, retaining the winning fit and its draws. Scalar diagnostics still grow with iteration count. The default keeps the full trace. Online scoring uses a different random stream, so the winning iteration can differ by Monte Carlo variation.",
+        "prepared_at": "2026-11-18T12:28:07Z"
+      },
+      "fix": {
+        "branch": "save-trace-false",
+        "commits": [
+          {
+            "sha": "c24c1317b2c7cd13f3c194944061549e2145b315",
+            "title": "feat: `save_trace=false` keeps only the ELBO-maximizing fit",
+            "original": [
+              "c24c1317b2c7cd13f3c194944061549e2145b315"
+            ]
+          }
+        ],
+        "why_together": "The streaming inverse-Hessian state, online scoring, result storage and their tests are implemented in one commit. This option works independently of per-call line-search construction."
+      },
+      "depends_on": [],
+      "requires": [],
+      "validation": [
+        {
+          "base": "7a449c9f4ae01b49de3e6baf681496ef2e96c2b3",
+          "julia": "1.10.12",
+          "bounds": "forced",
+          "tests": [
+            "test/utils.jl",
+            "test/optimize.jl",
+            "test/inverse_hessian.jl",
+            "test/mvnormal.jl",
+            "test/elbo.jl",
+            "test/singlepath.jl",
+            "test/multipath.jl",
+            "Separate default optimizers own distinct mutable termination flags"
+          ],
+          "result": "passed",
+          "detail": "2,291 of 2,291 checks passed on the merged line with Optim 2.3.2 and LineSearches 7.8.2. Julia used one thread."
+        }
+      ]
+    }
+  ]
+}
